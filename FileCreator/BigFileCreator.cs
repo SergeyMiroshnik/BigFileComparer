@@ -1,8 +1,4 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.SymbolStore;
-using System.Text;
-
-namespace FileCreator
+﻿namespace FileCreator
 {
     public class BigFileCreator
     {
@@ -59,15 +55,9 @@ namespace FileCreator
         private int NumberToSpan(Span<char> buffer)
         {
             int intVal = _rand.Next(10000);
-            int temp = intVal;
-            int length = 0;
-            do
-            {
-                temp /= 10;
-                length++;
-            } while (temp > 0);
+            int length = intVal.ToString().Length;
 
-            for (int i = length-1; i >= 0; i--)
+            for (int i = length - 1; i >= 0; i--)
             {
                 buffer[i] = _digits[intVal % 10];
                 intVal /= 10;

@@ -1,7 +1,7 @@
 ﻿using FileCreator;
 using FileSorter;
 
-Console.WriteLine("Create file? (Y/N)");
+Console.Write("Create file? (Y/N): ");
 string response = Console.ReadLine();
 string inputFilePath = "";
 if (response.ToUpper() == "Y")

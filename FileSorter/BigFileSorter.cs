@@ -45,8 +45,11 @@ namespace FileSorter
         {
             Directory.CreateDirectory(tempFolderPath);
 
+            Console.WriteLine($"Sorting start time: {DateTime.Now}");
             SplitAndSortFile();
+            Console.WriteLine($"File splitted at: {DateTime.Now}");
             MergeSortedFiles();
+            Console.WriteLine($"File sorted at: {DateTime.Now}");
 
             Directory.Delete(tempFolderPath, true);
             return outputPath;
@@ -56,32 +59,40 @@ namespace FileSorter
         {
             long inputFileSize = new FileInfo(sourcePath).Length;
             bufferSize = CalculateBufferSize(inputFileSize);
-            using FileStream fileStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize);
-            using StreamReader reader = new StreamReader(new BufferedStream(fileStream, bufferSize), Encoding.UTF8, true, bufferSize);
-
-            char[] buffer = new char[bufferSize];
-            StringBuilder restSymbols = new StringBuilder();
-            int bytesRead, tempFileIndex = 0;
-            SortedDictionary<string, List<int>> liness = new SortedDictionary<string, List<int>>(StringComparer.Ordinal);
-
-            while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+            try
             {
-                ProcessBuffer(buffer.AsSpan(0, bytesRead), restSymbols, liness);
+                using FileStream fileStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize);
+                using StreamReader reader = new StreamReader(new BufferedStream(fileStream, bufferSize), Encoding.UTF8, true, bufferSize);
 
-                if (liness.Count > 0)
+                char[] buffer = new char[bufferSize];
+                StringBuilder restSymbols = new StringBuilder();
+                int bytesRead, tempFileIndex = 0;
+                SortedDictionary<string, List<int>> lines = new SortedDictionary<string, List<int>>(StringComparer.Ordinal);
+
+                while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
                 {
+                    ProcessBuffer(buffer.AsSpan(0, bytesRead), restSymbols, lines);
+
+                    if (lines.Count > 0)
+                    {
+                        string tempFile = Path.Combine(tempFolderPath, $"part_{tempFileIndex++}.txt");
+                        WriteSortedPartial(tempFile, lines);
+                        lines.Clear();
+                    }
+                }
+
+                if (restSymbols.Length > 0)
+                {
+                    AddToDictionary(restSymbols.ToString(), lines);
+
                     string tempFile = Path.Combine(tempFolderPath, $"part_{tempFileIndex++}.txt");
-                    WriteSortedPartial(tempFile, liness);
-                    liness.Clear();
+                    WriteSortedPartial(tempFile, lines);
                 }
             }
-
-            if (restSymbols.Length > 0)
+            catch (Exception ex)
             {
-                AddToDictionary(restSymbols.ToString(), liness);
-
-                string tempFile = Path.Combine(tempFolderPath, $"part_{tempFileIndex++}.txt");
-                WriteSortedPartial(tempFile, liness);
+                Console.WriteLine(ex.ToString());
+                throw;
             }
 
             int CalculateBufferSize(long fileSize)
@@ -101,7 +112,7 @@ namespace FileSorter
             int start = 0;
             for (int i = 0; i < span.Length; i++)
             {
-                if (span[i] == '\n') // Найден конец строки
+                if (span[i] == '\n')
                 {
                     int length = i - start;
                     if (length > 0)
@@ -111,7 +122,7 @@ namespace FileSorter
                         if (restSymbols.Length > 0)
                         {
                             restSymbols.Append(span.Slice(start, length));
-                            AddToDictionary(restSymbols.ToString(), lines);
+                            AddToDictionary(restSymbols.ToString().AsMemory().Span, lines);
                             restSymbols.Clear();
                         }
                         else
@@ -170,12 +181,12 @@ namespace FileSorter
             int index = 0;
             PriorityQueue<FileEntry, FileEntry> queue = new PriorityQueue<FileEntry, FileEntry>(FileEntryComparer.Instance);
 
-            foreach (var fileName in fileNames)
+            for (int i = 0; i < fileNames.Length; i++)
             {
-                readers[index] = new StreamReader(fileName);
+                readers[index] = new StreamReader(fileNames[i]);
                 if (readers[index].ReadLine() is string line)
                 {
-                    var entry = new FileEntry { Line = line, Reader = readers[index] };
+                    var entry = new FileEntry(line, readers[index]);
                     queue.Enqueue(entry, entry);
                 }
                 index++;
@@ -190,7 +201,7 @@ namespace FileSorter
 
                     if (minEntry.Reader.ReadLine() is string nextLine)
                     {
-                        var entry = new FileEntry { Line = nextLine, Reader = minEntry.Reader };
+                        var entry = new FileEntry(nextLine, minEntry.Reader);
                         queue.Enqueue(entry, entry);
                     }
                         
@@ -208,44 +219,6 @@ namespace FileSorter
                     item.Dispose();
                 }
             }
-        }
-    }
-
-    internal struct FileEntry
-    {
-        public string Line { get; set; }
-        public StreamReader Reader { get; set; }
-
-        public FileEntry() { }
-    }
-
-    internal class FileEntryComparer : IComparer<FileEntry>
-    {
-        public static FileEntryComparer Instance = new FileEntryComparer();
-
-        public int Compare(FileEntry x, FileEntry y)
-        {
-            (int numberX, string textX) = ParseEntry(x.Line);
-            (int numberY, string textY) = ParseEntry(y.Line);
-
-            int textComparison = StringComparer.Ordinal.Compare(textX, textY);
-            if (textComparison != 0) return textComparison;
-
-            return numberX.CompareTo(numberY);
-        }
-
-        private static (int, string) ParseEntry(string line)
-        {
-            int dotIndex = line.IndexOf('.');
-            if (dotIndex == -1)
-                return (int.MaxValue, line);
-
-            ReadOnlySpan<char> numberPart = line.AsSpan(0, dotIndex);
-            ReadOnlySpan<char> textPart = line.AsSpan(dotIndex + 1);
-
-            int.TryParse(numberPart, out int number);
-
-            return (number, textPart.ToString());
         }
     }
 }
